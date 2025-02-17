@@ -1,0 +1,5 @@
+BATCH_SIZE = 32
+LEARNING_RATE = 0.001
+NUM_CLASSES = 10
+EPOCHS = 10
+DATA_PATH = "path/to/dataset/"
