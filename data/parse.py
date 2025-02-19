@@ -21,6 +21,8 @@ features = [] # List to store features
 for class_name in os.listdir(dataset_dir):
     class_path = os.path.join(dataset_dir, class_name)
     if os.path.isdir(class_path):  # Only process directories
+        class_id = int(class_name.split(" - ")[0])  # Extract numeric ID
+
         for root, _, filenames in os.walk(class_path):
             for filename in filenames:
                 if filename.endswith('.ogg'):
@@ -33,10 +35,9 @@ for class_name in os.listdir(dataset_dir):
                     # Extract Mel Spectrogram
                     mel_spectrogram = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=128)
                     mel_spectrogram_db = librosa.power_to_db(mel_spectrogram, ref=np.max)
-                    mel_spectrogram_mean = np.mean(mel_spectrogram_db.T, axis=0)
                     
                     # Append features and label
-                    features.append((mel_spectrogram_mean, class_name))
+                    features.append((mel_spectrogram_db.tolist(), class_id))
 
 
 
