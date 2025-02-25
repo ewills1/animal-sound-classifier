@@ -1,64 +1,61 @@
 import torch
 import torch.optim as optim
 import torch.nn as nn
+from data.parse import Parse
 from torch.utils.data import DataLoader, Dataset
 from model.cnn import CNN
+from scipy.signal import resample
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
-import pandas as pd
 import utils
-from ast import literal_eval
 
 class AudioDataset(Dataset):
     def __init__(self, features, labels):
-        self.features = features
-        self.labels = labels
+        self.features = torch.tensor(features, dtype=torch.float32)
+        self.labels = torch.tensor(labels, dtype=torch.long)  # Ensure labels are LONG for CrossEntropyLoss
 
     def __len__(self):
         return len(self.features)
 
     def __getitem__(self, idx):
-        feature = self.features[idx]
-        label = self.labels[idx]
-        return torch.tensor(feature, dtype=torch.float32), torch.tensor(label, dtype=torch.long)
+        return self.features[idx], self.labels[idx]
 
-def process_data(train_csv, test_csv):
-    train_df = pd.read_csv(train_csv)
-    test_df = pd.read_csv(test_csv)
-    
-    # Convert string features to numpy arrays
-    # Convert the features lists back to numpy arrays
-    train_features = np.array(train_df['features'])
-    test_features = np.array(test_df['features'])
-    
-    # Check the shapes after extraction
-    print("Extracted train features shape:", train_features.shape)  # Should be (num_samples, feature_length)
-    print("Extracted test features shape:", test_features.shape)
+parse = Parse()
+train_df = parse.get_train_dataframe()
 
-    train_labels = train_df['label']
-    test_labels = test_df['label'] 
+train_labels = train_df['label'].values
 
-    # Normalize features
-    scaler = MinMaxScaler()
-    train_features = scaler.fit_transform(train_features)
-    test_features = scaler.transform(test_features)
+train_features = train_df['features'].tolist()
 
-    train_features = train_features.reshape(train_features.shape[0], 1, 128, 1)  # This keeps the 1 channel and adds a width dimension.
-    test_features = test_features.reshape(test_features.shape[0], 1, 128, 1)  # This keeps the 1 channel and adds a width dimension.
+scaler = MinMaxScaler()
 
-    
-    return (train_features, train_labels), (test_features, test_labels)
+# Flatten the mel spectrograms for normalization
+train_features_flat = [feature.flatten() for feature in train_features]
+train_features_flat = np.array([resample(x, 128) for x in train_features_flat])
 
-# Load data
-(train_features, train_labels), (test_features, test_labels) = process_data('train_features.csv', 'test_features.csv')
+# print([len(x) for x in train_features_flat])  # Check individual sequence lengths
+# print(type(train_features_flat), type(train_features_flat[0]))  # Check types
 
 
-# Create datasets and dataloaders
-train_dataset = AudioDataset(train_features, train_labels)
-test_dataset = AudioDataset(test_features, test_labels)
+# Reshape to (batch_size, 1, 128, 1) without an extra dimension
+train_features_normalized = scaler.fit_transform(train_features_flat)
+train_features_normalized = np.array(train_features_normalized).reshape(len(train_features_normalized), 1, 128, 1)
 
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
+
+print(train_features_normalized.shape)  # Should be (batch_size, 1, 128, 1)
+train_labels = train_labels - train_labels.min()
+
+print("Max label:", train_labels.max())
+print("Min label:", train_labels.min())
+print("Number of classes:", len(np.unique(train_labels)))
+
+
+# Create an instance of the custom dataset
+audio_dataset = AudioDataset(train_features_normalized, train_labels)
+
+# Create a DataLoader
+train_loader = DataLoader(audio_dataset, batch_size=32, shuffle=True)
 
 # Model, loss, optimizer
 model = CNN(num_classes=len(np.unique(train_labels)))
@@ -71,7 +68,6 @@ def train(model, dataloader, criterion, optimizer, epochs=10):
     for epoch in range(epochs):
         running_loss = 0.0
         for inputs, labels in dataloader:
-            inputs = inputs.unsqueeze(1)  # Add channel dimension
             optimizer.zero_grad()
             outputs = model(inputs)
             loss = criterion(outputs, labels)
@@ -81,8 +77,26 @@ def train(model, dataloader, criterion, optimizer, epochs=10):
         
         print(f"Epoch {epoch+1}, Loss: {running_loss/len(dataloader)}")
 
+def evaluate(model, dataloader):
+    model.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for inputs, labels in dataloader:
+            outputs = model(inputs)
+            _, predicted = torch.max(outputs, 1)  # Get predicted class
+            correct += (predicted == labels).sum().item()
+            total += labels.size(0)
+
+    accuracy = 100 * correct / total
+    print(f"Accuracy: {accuracy:.2f}%")
+
+
 # Train model
-train(model, train_loader, criterion, optimizer, epochs=10)
+train(model, train_loader, criterion, optimizer, epochs=30)
+
+# Evaluate model
+evaluate(model, train_loader)
 
 # Save trained model
 utils.save_model(model, "audio_classifier.pth")
