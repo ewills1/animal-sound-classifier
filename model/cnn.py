@@ -17,6 +17,8 @@ class CNN(nn.Module):
 
         self.pool = nn.MaxPool2d(2)  # 2x2 pooling halves spatial size
 
+        self.dropout = nn.Dropout(0.5)
+
         # Compute final feature map size (assuming input size is [batch, 1, 128, 1])
         final_height = 128 // 8  # Three max pools reduce height (128 → 64 → 32 → 16)
         final_width = 1  # Width remains 1

@@ -22,10 +22,13 @@ class AudioDataset(Dataset):
 
 parse = Parse()
 train_df = parse.get_train_dataframe()
+test_df = parse.get_test_dataframe()
 
 train_labels = train_df['label'].values
+test_labels = test_df['label'].values
 
 train_features = train_df['features'].tolist()
+test_features = test_df['features'].tolist()
 
 scaler = MinMaxScaler()
 
@@ -33,18 +36,19 @@ scaler = MinMaxScaler()
 train_features_flat = [feature.flatten() for feature in train_features]
 train_features_flat = np.array([resample(x, 128) for x in train_features_flat])
 
-# print([len(x) for x in train_features_flat])  # Check individual sequence lengths
-# print(type(train_features_flat), type(train_features_flat[0]))  # Check types
-
+test_features_flat = [feature.flatten() for feature in test_features]
+test_features_flat = np.array([resample(x, 128) for x in test_features_flat])
 
 # Reshape to (batch_size, 1, 128, 1) without an extra dimension
 train_features_normalized = scaler.fit_transform(train_features_flat)
 train_features_normalized = np.array(train_features_normalized).reshape(len(train_features_normalized), 1, 128, 1)
 
-
+test_features_normalized = scaler.fit_transform(test_features_flat)
+test_features_normalized = np.array(test_features_normalized).reshape(len(test_features_normalized), 1, 128, 1)
 
 print(train_features_normalized.shape)  # Should be (batch_size, 1, 128, 1)
 train_labels = train_labels - train_labels.min()
+test_labels = test_labels - test_labels.min()
 
 print("Max label:", train_labels.max())
 print("Min label:", train_labels.min())
@@ -57,13 +61,18 @@ audio_dataset = AudioDataset(train_features_normalized, train_labels)
 # Create a DataLoader
 train_loader = DataLoader(audio_dataset, batch_size=32, shuffle=True)
 
+test_loader = DataLoader(AudioDataset(test_features_normalized, test_labels), batch_size=32, shuffle=False)
+
 # Model, loss, optimizer
-model = CNN(num_classes=len(np.unique(train_labels)))
+train_model = CNN(num_classes=len(np.unique(train_labels)))
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(train_model.parameters(), lr=0.0001)
+
+test_model = CNN(num_classes=len(np.unique(test_labels)))
+optimizer = optim.Adam(test_model.parameters(), lr=0.0001)
 
 # Training function
-def train(model, dataloader, criterion, optimizer, epochs=10):
+def train(model, dataloader, criterion, optimizer, epochs=30):
     model.train()
     for epoch in range(epochs):
         running_loss = 0.0
@@ -93,12 +102,12 @@ def evaluate(model, dataloader):
 
 
 # Train model
-train(model, train_loader, criterion, optimizer, epochs=30)
+train(train_model, train_loader, criterion, optimizer, epochs=30)
 
 # Evaluate model
-evaluate(model, train_loader)
+evaluate(train_model, test_loader)
 
 # Save trained model
-utils.save_model(model, "audio_classifier.pth")
+utils.save_model(train_model, "audio_classifier.pth")
 
 
